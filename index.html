@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aplikasi Laporan Keuangan UMKM</title>
+
+  <!-- Google Fonts Quicksand -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300..700&display=swap"
+    rel="stylesheet"
+  />
+  <!-- Font Awesome 5.15.4 -->
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css"
+    integrity="sha512-1ycn6IcaQQ40/MKBW2W4Rhis/DbILU74C1vSrLJxCq57o941Ym01SwNsOMqvEBFlcgUa6xLiPY/NS5R+E6ztJQ=="
+    crossorigin="anonymous"
+    referrerpolicy="no-referrer"
+  />
+
+  <!-- ===== LIBRARY PDF ===== -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="assets/css/style.css" />
+
+  <!-- CSS tambahan untuk menu user (titik 3 + dropdown) -->
+  <style>
+    /* Floating menu titik 3: posisi fixed terhadap layar (bukan terhadap header),
+       jadi dijamin tidak akan menabrak judul/teks apapun di header. */
+    .user-menu {
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      z-index: 1000;
+    }
+
+    .btn-user-menu {
+      background: #ffffff;
+      border: none;
+      color: #555;
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      font-size: 1.1rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+      transition: box-shadow 0.2s ease;
+    }
+
+    .btn-user-menu:hover {
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+    }
+
+    .user-dropdown {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      min-width: 200px;
+      background: #ffffff;
+      color: #333;
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+      overflow: hidden;
+      z-index: 1000;
+    }
+
+    .user-dropdown.hidden {
+      display: none;
+    }
+
+    .user-dropdown-name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+
+    .user-dropdown-name i {
+      font-size: 1.3rem;
+      color: #888;
+    }
+
+    .user-dropdown hr {
+      border: none;
+      border-top: 1px solid #eee;
+      margin: 0;
+    }
+
+    .btn-logout-item {
+      width: 100%;
+      border: none;
+      background: none;
+      text-align: left;
+      padding: 12px 16px;
+      cursor: pointer;
+      font-size: 0.95rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #e53935;
+      font-family: inherit;
+    }
+
+    .btn-logout-item:hover {
+      background: #fdecea;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ===== LOGIN FORM MODERN ===== -->
+  <div id="loginContainer" class="login-container">
+    <div class="login-wrapper">
+      <div class="bubbles">
+        <span></span><span></span><span></span>
+        <span></span><span></span><span></span>
+        <span></span><span></span><span></span>
+      </div>
+
+      <div class="login-card">
+        <!-- FORM LOGIN -->
+        <div id="loginFormContainer">
+          <div class="login-header">
+            <div class="login-icon">
+              <i class="fas fa-chart-line"></i>
+            </div>
+            <h2>Selamat Datang</h2>
+            <p>Silakan login untuk melanjutkan</p>
+          </div>
+
+          <form id="loginForm" class="login-form">
+            <div class="form-group">
+              <label><i class="fas fa-user"></i> Username</label>
+              <input type="text" id="loginUsername" placeholder="Masukkan username" required />
+            </div>
+
+            <div class="form-group">
+              <label><i class="fas fa-lock"></i> Password</label>
+              <div class="password-wrapper">
+                <input type="password" id="loginPassword" placeholder="Masukkan password" required />
+                <span class="toggle-password" onclick="togglePassword()">
+                  <i class="fas fa-eye" id="eyeIcon"></i>
+                </span>
+              </div>
+              <p style="text-align:right; margin-top:6px;">
+                <a href="#" id="showForgotPassword" style="font-size:0.85rem;">Lupa Password?</a>
+              </p>
+            </div>
+
+            <button type="submit" id="loginBtn">
+              <span>Masuk</span>
+              <i class="fas fa-arrow-right"></i>
+            </button>
+
+            <p id="loginError" class="login-error hidden">
+              <i class="fas fa-exclamation-circle"></i> Username atau password salah!
+            </p>
+          </form>
+        </div>
+
+        <!-- FORM REGISTRASI -->
+        <div id="registerFormContainer" class="hidden">
+          <div class="login-header">
+            <div class="login-icon">
+              <i class="fas fa-user-plus"></i>
+            </div>
+            <h2>Daftar Akun</h2>
+            <p>Buat akun baru untuk memulai</p>
+          </div>
+
+          <form id="registerForm" class="login-form">
+            <div class="form-group">
+              <label><i class="fas fa-user"></i> Username</label>
+              <input type="text" id="registerUsername" placeholder="Pilih username" required />
+            </div>
+            <div class="form-group">
+              <label><i class="fas fa-lock"></i> Password</label>
+              <input type="password" id="registerPassword" placeholder="Minimal 3 karakter" required />
+            </div>
+            <div class="form-group">
+              <label><i class="fas fa-check"></i> Konfirmasi Password</label>
+              <input type="password" id="registerConfirm" placeholder="Ulangi password" required />
+            </div>
+
+            <button type="submit" id="registerBtn">
+              <span>Daftar</span>
+              <i class="fas fa-user-plus"></i>
+            </button>
+
+            <p id="registerError" class="login-error hidden">
+              <i class="fas fa-exclamation-circle"></i> <span id="registerErrorMessage"></span>
+            </p>
+            <p id="registerSuccess" class="login-success hidden">
+              <i class="fas fa-check-circle"></i> Pendaftaran berhasil! Silakan login.
+            </p>
+          </form>
+        </div>
+
+        <!-- FORM LUPA PASSWORD -->
+        <div id="forgotFormContainer" class="hidden">
+          <div class="login-header">
+            <div class="login-icon">
+              <i class="fas fa-key"></i>
+            </div>
+            <h2>Lupa Password</h2>
+            <p>Masukkan username untuk mengatur ulang password</p>
+          </div>
+
+          <form id="forgotForm" class="login-form">
+            <!-- Langkah 1: cari username -->
+            <div id="forgotStep1">
+              <div class="form-group">
+                <label><i class="fas fa-user"></i> Username</label>
+                <input type="text" id="forgotUsername" placeholder="Masukkan username" />
+              </div>
+              <button type="button" id="forgotCariBtn">
+                <span>Cari Akun</span>
+                <i class="fas fa-search"></i>
+              </button>
+            </div>
+
+            <!-- Langkah 2: set password baru -->
+            <div id="forgotStep2" class="hidden">
+              <div class="form-group">
+                <label><i class="fas fa-lock"></i> Password Baru</label>
+                <input type="password" id="forgotNewPassword" placeholder="Minimal 3 karakter" />
+              </div>
+              <div class="form-group">
+                <label><i class="fas fa-check"></i> Konfirmasi Password Baru</label>
+                <input type="password" id="forgotConfirmPassword" placeholder="Ulangi password baru" />
+              </div>
+              <button type="submit" id="forgotResetBtn">
+                <span>Reset Password</span>
+                <i class="fas fa-redo"></i>
+              </button>
+            </div>
+
+            <p id="forgotError" class="login-error hidden">
+              <i class="fas fa-exclamation-circle"></i> <span id="forgotErrorMessage"></span>
+            </p>
+            <p id="forgotSuccess" class="login-success hidden">
+              <i class="fas fa-check-circle"></i> Password berhasil diubah! Silakan login.
+            </p>
+          </form>
+
+          <div class="login-toggle">
+            <p><a href="#" id="backToLoginFromForgot">&larr; Kembali ke login</a></p>
+          </div>
+        </div>
+
+        <!-- Toggle Login / Register -->
+        <div class="login-toggle" id="loginRegisterToggle">
+          <p id="toggleLoginLink">Belum punya akun? <a href="#" id="showRegister">Daftar</a></p>
+          <p id="toggleRegisterLink" class="hidden">Sudah punya akun? <a href="#" id="showLogin">Masuk</a></p>
+        </div>
+
+        <div class="login-footer">
+          <p>Aplikasi Keuangan UMKM &copy; 2026</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== KONTEN UTAMA ===== -->
+  <div id="mainContent" class="hidden">
+
+    <header class="header">
+      <h1>Laporan Keuangan UMKM</h1>
+      <p>Otomatisasi pencatatan keuangan sederhana</p>
+
+      <div class="user-menu" id="userMenu">
+        <button id="userMenuBtn" class="btn-user-menu" aria-label="Menu pengguna">
+          <i class="fas fa-ellipsis-v"></i>
+        </button>
+        <div id="userDropdown" class="user-dropdown hidden">
+          <div class="user-dropdown-name">
+            <i class="fas fa-user-circle"></i>
+            <span id="loggedUsername">Pengguna</span>
+          </div>
+          <hr />
+          <button id="logoutBtn" class="btn-logout-item">
+            <i class="fas fa-sign-out-alt"></i> Logout
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <nav class="nav">
+      <ul>
+        <li><a href="#" data-page="Dashboard">Dashboard</a></li>
+        <li><a href="#" data-page="inputTransaksi">Jurnal Umum</a></li>
+        <li><a href="#" data-page="bukuBesar">Buku Besar</a></li>
+        <li><a href="#" data-page="neracaSaldo">Neraca Saldo</a></li>
+        <li><a href="#" data-page="labaRugi">Laba Rugi</a></li>
+        <li><a href="#" data-page="arusKas">Arus Kas</a></li>
+        <li><a href="#" data-page="perubahanModal">Perubahan Modal</a></li>
+        <li><a href="#" data-page="jurnalPenyesuaian">Jurnal Penyesuaian</a></li>
+        <li><a href="#" data-page="Database">Histori</a></li>
+      </ul>
+    </nav>
+
+    <main id="app">
+      <section class="welcome">
+        <h2>Selamat Datang</h2>
+        <p>Gunakan menu di atas untuk mulai mencatat dan mengelola laporan keuangan UMKM Anda.</p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>&copy; 2026 Aplikasi Keuangan UMKM</p>
+    </footer>
+
+  </div>
+
+  <!-- Modal Password -->
+  <div id="passwordModal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Konfirmasi Password</h3>
+      <input type="password" id="passwordInput" placeholder="Masukkan password" />
+      <div class="modal-actions">
+        <button onclick="batalPassword()">Batal</button>
+        <button onclick="submitPassword()">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript -->
+  <script src="assets/js/utils.js"></script>
+  <script src="assets/js/storage.js"></script>
+  <script src="assets/js/modules/Dashboard.js"></script>
+  <script src="assets/js/modules/inputTransaksi.js"></script> 
+  <script src="assets/js/modules/bukuBesar.js"></script>
+  <script src="assets/js/modules/neracaSaldo.js"></script>
+  <script src="assets/js/modules/labaRugi.js"></script>
+  <script src="assets/js/modules/arusKas.js"></script>
+  <script src="assets/js/modules/perubahanModal.js"></script>
+  <script src="assets/js/modules/Database.js"></script>
+  <script src="assets/js/modules/jurnalPenyesuaian.js"></script>
+  <script src="assets/js/app.js"></script>
+
+  <script>
+    function togglePassword() {
+      const passwordInput = document.getElementById('loginPassword');
+      const eyeIcon = document.getElementById('eyeIcon');
+      if (passwordInput.type === 'password') {
+        passwordInput.type = 'text';
+        eyeIcon.className = 'fas fa-eye-slash';
+      } else {
+        passwordInput.type = 'password';
+        eyeIcon.className = 'fas fa-eye';
+      }
+    }
+
+    // ===== Menu titik 3 (dropdown user: nama + logout) =====
+    (function () {
+      const menuBtn = document.getElementById('userMenuBtn');
+      const dropdown = document.getElementById('userDropdown');
+      const usernameLabel = document.getElementById('loggedUsername');
+
+      if (!menuBtn || !dropdown) return;
+
+      // Toggle dropdown saat tombol titik 3 diklik
+      menuBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        dropdown.classList.toggle('hidden');
+      });
+
+      // Tutup dropdown saat klik di luar area menu
+      document.addEventListener('click', function (e) {
+        if (!dropdown.classList.contains('hidden') && !e.target.closest('#userMenu')) {
+          dropdown.classList.add('hidden');
+        }
+      });
+
+      // Tampilkan nama username yang sedang login.
+      // Sesuai storage.js: getUsername() membaca localStorage.getItem('username')
+      function updateUsernameLabel() {
+        const stored = localStorage.getItem('username');
+        if (stored && usernameLabel) {
+          usernameLabel.textContent = stored;
+        }
+      }
+
+      updateUsernameLabel();
+
+      // Jika username baru tersedia setelah login (mainContent dimunculkan), perbarui label
+      const observer = new MutationObserver(updateUsernameLabel);
+      const mainContent = document.getElementById('mainContent');
+      if (mainContent) {
+        observer.observe(mainContent, { attributes: true, attributeFilter: ['class'] });
+      }
+    })();
+
+    // ===== Fitur Lupa Password =====
+    (function () {
+      const loginFormContainer = document.getElementById('loginFormContainer');
+      const registerFormContainer = document.getElementById('registerFormContainer');
+      const forgotFormContainer = document.getElementById('forgotFormContainer');
+      const loginRegisterToggle = document.getElementById('loginRegisterToggle');
+
+      const showForgotPassword = document.getElementById('showForgotPassword');
+      const backToLoginFromForgot = document.getElementById('backToLoginFromForgot');
+
+      const forgotStep1 = document.getElementById('forgotStep1');
+      const forgotStep2 = document.getElementById('forgotStep2');
+      const forgotUsername = document.getElementById('forgotUsername');
+      const forgotCariBtn = document.getElementById('forgotCariBtn');
+      const forgotNewPassword = document.getElementById('forgotNewPassword');
+      const forgotConfirmPassword = document.getElementById('forgotConfirmPassword');
+      const forgotForm = document.getElementById('forgotForm');
+      const forgotError = document.getElementById('forgotError');
+      const forgotErrorMessage = document.getElementById('forgotErrorMessage');
+      const forgotSuccess = document.getElementById('forgotSuccess');
+
+      if (!showForgotPassword || !forgotFormContainer) return;
+
+      let matchedUsername = null; // username yang ditemukan, siap diganti passwordnya
+
+      // Catatan: loadUsers() dan saveUsers() di bawah ini sudah didefinisikan
+      // secara global di assets/js/storage.js (di-load sebelum script ini),
+      // dan menyimpan data di localStorage key "users" sebagai array
+      // [{ username: "...", password: "..." }, ...]. Tidak perlu didefinisikan ulang di sini.
+
+      function resetForgotForm() {
+        forgotUsername.value = '';
+        forgotNewPassword.value = '';
+        forgotConfirmPassword.value = '';
+        forgotStep1.classList.remove('hidden');
+        forgotStep2.classList.add('hidden');
+        forgotError.classList.add('hidden');
+        forgotSuccess.classList.add('hidden');
+        matchedUsername = null;
+      }
+
+      function showForgotView() {
+        loginFormContainer.classList.add('hidden');
+        registerFormContainer.classList.add('hidden');
+        loginRegisterToggle.classList.add('hidden');
+        resetForgotForm();
+        forgotFormContainer.classList.remove('hidden');
+      }
+
+      function showLoginView() {
+        forgotFormContainer.classList.add('hidden');
+        registerFormContainer.classList.add('hidden');
+        loginFormContainer.classList.remove('hidden');
+        loginRegisterToggle.classList.remove('hidden');
+      }
+
+      showForgotPassword.addEventListener('click', function (e) {
+        e.preventDefault();
+        showForgotView();
+      });
+
+      backToLoginFromForgot.addEventListener('click', function (e) {
+        e.preventDefault();
+        showLoginView();
+      });
+
+      // Langkah 1: cari username
+      forgotCariBtn.addEventListener('click', function () {
+        const username = forgotUsername.value.trim();
+        forgotError.classList.add('hidden');
+
+        if (!username) {
+          forgotErrorMessage.textContent = 'Username wajib diisi!';
+          forgotError.classList.remove('hidden');
+          return;
+        }
+
+        const users = loadUsers();
+        const found = users.find(
+          (u) => (u.username || '').toLowerCase() === username.toLowerCase()
+        );
+
+        if (!found) {
+          forgotErrorMessage.textContent = 'Username tidak ditemukan!';
+          forgotError.classList.remove('hidden');
+          return;
+        }
+
+        matchedUsername = found.username;
+        forgotStep1.classList.add('hidden');
+        forgotStep2.classList.remove('hidden');
+      });
+
+      // Langkah 2: simpan password baru
+      forgotForm.addEventListener('submit', function (e) {
+        e.preventDefault();
+        if (forgotStep2.classList.contains('hidden')) return; // belum sampai langkah 2
+
+        forgotError.classList.add('hidden');
+
+        const newPass = forgotNewPassword.value;
+        const confirmPass = forgotConfirmPassword.value;
+
+        if (newPass.length < 3) {
+          forgotErrorMessage.textContent = 'Password minimal 3 karakter!';
+          forgotError.classList.remove('hidden');
+          return;
+        }
+
+        if (newPass !== confirmPass) {
+          forgotErrorMessage.textContent = 'Konfirmasi password tidak sama!';
+          forgotError.classList.remove('hidden');
+          return;
+        }
+
+        const users = loadUsers();
+        const idx = users.findIndex(
+          (u) => (u.username || '').toLowerCase() === matchedUsername.toLowerCase()
+        );
+
+        if (idx === -1) {
+          forgotErrorMessage.textContent = 'Terjadi kesalahan, akun tidak ditemukan.';
+          forgotError.classList.remove('hidden');
+          return;
+        }
+
+        users[idx].password = newPass;
+        saveUsers(users);
+
+        forgotStep2.classList.add('hidden');
+        forgotSuccess.classList.remove('hidden');
+
+        setTimeout(function () {
+          showLoginView();
+          document.getElementById('loginUsername').value = matchedUsername;
+        }, 1500);
+      });
+    })();
+  </script>
+
+</body>
+</html>
