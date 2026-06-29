@@ -25,6 +25,9 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
 
+  <!-- ===== LIBRARY CHART (untuk grafik tren keuangan di Dashboard) ===== -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+
   <!-- CSS -->
   <link rel="stylesheet" href="assets/css/style.css" />
 
@@ -288,6 +291,10 @@
             <span id="loggedUsername">Pengguna</span>
           </div>
           <hr />
+          <button id="changePinBtn" class="btn-logout-item" style="color:#2563eb;">
+            <i class="fas fa-key"></i> Ubah PIN Transaksi
+          </button>
+          <hr />
           <button id="logoutBtn" class="btn-logout-item">
             <i class="fas fa-sign-out-alt"></i> Logout
           </button>
@@ -305,6 +312,8 @@
         <li><a href="#" data-page="arusKas">Arus Kas</a></li>
         <li><a href="#" data-page="perubahanModal">Perubahan Modal</a></li>
         <li><a href="#" data-page="jurnalPenyesuaian">Jurnal Penyesuaian</a></li>
+        <li><a href="#" data-page="transferKas">Transfer</a></li>
+        <li><a href="#" data-page="anggaran">Anggaran</a></li>
         <li><a href="#" data-page="Database">Histori</a></li>
       </ul>
     </nav>
@@ -322,14 +331,41 @@
 
   </div>
 
-  <!-- Modal Password -->
+  <!-- Modal PIN Transaksi -->
   <div id="passwordModal" class="modal hidden">
     <div class="modal-content">
-      <h3>Konfirmasi Password</h3>
-      <input type="password" id="passwordInput" placeholder="Masukkan password" />
+      <h3 id="passwordModalTitle">Konfirmasi PIN</h3>
+      <input type="password" id="passwordInput" inputmode="numeric" maxlength="6" placeholder="Masukkan PIN" />
+      <div id="pinConfirmGroup" class="hidden" style="margin-top:10px;">
+        <input type="password" id="passwordConfirmInput" inputmode="numeric" maxlength="6" placeholder="Ulangi PIN" />
+      </div>
       <div class="modal-actions">
         <button onclick="batalPassword()">Batal</button>
         <button onclick="submitPassword()">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Ganti PIN (dari menu user) -->
+  <div id="changePinModal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Ubah PIN Transaksi</h3>
+      <div class="form-group" id="changePinOldGroup">
+        <label>PIN Lama</label>
+        <input type="password" id="changePinOld" inputmode="numeric" maxlength="6" placeholder="PIN lama" />
+      </div>
+      <div class="form-group">
+        <label>PIN Baru</label>
+        <input type="password" id="changePinNew" inputmode="numeric" maxlength="6" placeholder="Min. 4 digit" />
+      </div>
+      <div class="form-group">
+        <label>Konfirmasi PIN Baru</label>
+        <input type="password" id="changePinConfirm" inputmode="numeric" maxlength="6" placeholder="Ulangi PIN baru" />
+      </div>
+      <p id="changePinError" class="login-error hidden"></p>
+      <div class="modal-actions">
+        <button onclick="batalGantiPin()">Batal</button>
+        <button onclick="submitGantiPin()">Simpan</button>
       </div>
     </div>
   </div>
@@ -346,6 +382,8 @@
   <script src="assets/js/modules/perubahanModal.js"></script>
   <script src="assets/js/modules/Database.js"></script>
   <script src="assets/js/modules/jurnalPenyesuaian.js"></script>
+  <script src="assets/js/modules/transferKas.js"></script>
+  <script src="assets/js/modules/anggaran.js"></script>
   <script src="assets/js/app.js"></script>
 
   <script>
@@ -374,6 +412,15 @@
         e.stopPropagation();
         dropdown.classList.toggle('hidden');
       });
+
+      // Tombol "Ubah PIN Transaksi"
+      const changePinBtn = document.getElementById('changePinBtn');
+      if (changePinBtn) {
+        changePinBtn.addEventListener('click', function () {
+          dropdown.classList.add('hidden');
+          bukaModalGantiPin();
+        });
+      }
 
       // Tutup dropdown saat klik di luar area menu
       document.addEventListener('click', function (e) {
@@ -497,49 +544,4 @@
       // Langkah 2: simpan password baru
       forgotForm.addEventListener('submit', function (e) {
         e.preventDefault();
-        if (forgotStep2.classList.contains('hidden')) return; // belum sampai langkah 2
-
-        forgotError.classList.add('hidden');
-
-        const newPass = forgotNewPassword.value;
-        const confirmPass = forgotConfirmPassword.value;
-
-        if (newPass.length < 3) {
-          forgotErrorMessage.textContent = 'Password minimal 3 karakter!';
-          forgotError.classList.remove('hidden');
-          return;
-        }
-
-        if (newPass !== confirmPass) {
-          forgotErrorMessage.textContent = 'Konfirmasi password tidak sama!';
-          forgotError.classList.remove('hidden');
-          return;
-        }
-
-        const users = loadUsers();
-        const idx = users.findIndex(
-          (u) => (u.username || '').toLowerCase() === matchedUsername.toLowerCase()
-        );
-
-        if (idx === -1) {
-          forgotErrorMessage.textContent = 'Terjadi kesalahan, akun tidak ditemukan.';
-          forgotError.classList.remove('hidden');
-          return;
-        }
-
-        users[idx].password = newPass;
-        saveUsers(users);
-
-        forgotStep2.classList.add('hidden');
-        forgotSuccess.classList.remove('hidden');
-
-        setTimeout(function () {
-          showLoginView();
-          document.getElementById('loginUsername').value = matchedUsername;
-        }, 1500);
-      });
-    })();
-  </script>
-
-</body>
-</html>
+     
