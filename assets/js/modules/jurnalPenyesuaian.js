@@ -1,329 +1,261 @@
+// =====================================================================
+// JURNAL PENYESUAIAN
+// -----------------------------------------------------------------------
+// PERUBAHAN SESUAI PERMINTAAN:
+// 1. Persediaan TIDAK lagi ditampilkan/dihitung di Jurnal Penyesuaian.
+//    Data persediaan tetap tercatat di Jurnal Umum, Buku Besar, Neraca
+//    Saldo, dll (ditangani di file lain), kecuali di Jurnal Penyesuaian.
+// 2. Akun "Perlengkapan" (sebagai akun aset) ditambahkan di AKUN_RULES
+//    pada inputTransaksi.js, sehingga otomatis masuk ke Jurnal Umum,
+//    Buku Besar, Neraca Saldo, dll. Di sini yang muncul hanyalah AYAT
+//    PENYESUAIAN perlengkapan (pemakaiannya), bukan akun mentahnya.
+// 3. Jurnal Penyesuaian sekarang berisi 4 jenis penyesuaian akhir bulan:
+//    - Penyusutan Peralatan
+//    - Penyesuaian Perlengkapan
+//    - Penyesuaian Sewa
+//    - Penyesuaian Gaji
+//
+// CATATAN: Kode & nama akun di bawah ini SUDAH DISELARASKAN dengan
+// AKUN_RULES di inputTransaksi.js (Beban Gaji 501 & Beban Sewa 505
+// dipakai ulang, bukan dibuat baru). Kalau kamu mengubah kode akun di
+// inputTransaksi.js, ubah juga di sini agar tetap konsisten.
+// =====================================================================
+
+const KONFIGURASI_PENYESUAIAN = {
+  peralatan: {
+    label: "Penyusutan Peralatan",
+    storageKey: "penyesuaian_peralatan",
+    kataKunci: ["penyusutan peralatan", "susut peralatan", "depresiasi peralatan"],
+    debit: { kode: "507", nama: "Beban Penyusutan Peralatan" },
+    kredit: { kode: "108", nama: "Akumulasi Penyusutan Peralatan" }
+  },
+  perlengkapan: {
+    label: "Penyesuaian Perlengkapan",
+    storageKey: "penyesuaian_perlengkapan",
+    kataKunci: ["penyesuaian perlengkapan", "pemakaian perlengkapan", "perlengkapan terpakai"],
+    debit: { kode: "506", nama: "Beban Perlengkapan" },
+    kredit: { kode: "106", nama: "Perlengkapan" }
+  },
+  sewa: {
+    label: "Penyesuaian Sewa",
+    storageKey: "penyesuaian_sewa",
+    kataKunci: ["penyesuaian sewa", "beban sewa", "sewa dibayar dimuka"],
+    debit: { kode: "505", nama: "Beban Sewa" },
+    kredit: { kode: "107", nama: "Sewa Dibayar Dimuka" }
+  },
+  gaji: {
+    label: "Penyesuaian Gaji",
+    storageKey: "penyesuaian_gaji",
+    kataKunci: ["penyesuaian gaji", "gaji terutang", "utang gaji"],
+    debit: { kode: "501", nama: "Beban Gaji" },
+    kredit: { kode: "203", nama: "Utang Gaji" }
+  }
+};
+
 function renderJurnalPenyesuaianPersediaan() {
   const app = document.getElementById("app");
   const transaksi = getInputTransaksi();
 
   // ===============================
-  // 1. DATA OTOMATIS DARI TRANSAKSI
+  // 1. HELPER: COCOK KATA KUNCI
   // ===============================
-
-  // Filter transaksi persediaan
-  const dataPersediaan = transaksi.filter(t => {
-    const { debit, kredit } = tentukanDebitKredit(t);
-    return (
-      debit.nama.toLowerCase() === "persediaan" ||
-      kredit.nama.toLowerCase() === "persediaan"
-    );
-  });
-
-  // Filter transaksi peralatan
-  const dataPeralatan = transaksi.filter(t => {
-    const { debit, kredit } = tentukanDebitKredit(t);
-    return (
-      debit.nama.toLowerCase() === "peralatan" ||
-      kredit.nama.toLowerCase() === "peralatan"
-    );
-  });
-
-  // Filter transaksi HPP (otomatis dari kata kunci di keterangan)
-  // Dibuat lebih stabil:
-  // - Tidak error kalau t.keterangan kosong/undefined
-  // - Trim spasi & lowercase supaya "  Pemakaian Persediaan " tetap kedeteksi
-  // - Daftar kata kunci diperluas supaya berbagai variasi penulisan tetap kena
-  const KATA_KUNCI_HPP_OTOMATIS = [
-    "hpp",
-    "harga pokok penjualan",
-    "pemakaian",
-    "pakai persediaan",
-    "penyusutan",
-    "depresiasi",
-    "susut"
-  ];
-
-  function cocokKataKunciHPP(teks) {
+  function cocokKataKunci(teks, daftarKataKunci) {
     const t = (teks || "").toLowerCase().trim();
     if (!t) return false;
-    return KATA_KUNCI_HPP_OTOMATIS.some(kata => t.includes(kata));
+    return daftarKataKunci.some(kata => t.includes(kata));
   }
 
-  const dataHPPOtomatis = transaksi.filter(t => cocokKataKunciHPP(t.keterangan));
+  // ===============================
+  // 2. AMBIL DATA OTOMATIS (DARI JURNAL UMUM) + MANUAL PER JENIS
+  // ===============================
+  function ambilDataPenyesuaian(jenisKey) {
+    const cfg = KONFIGURASI_PENYESUAIAN[jenisKey];
 
-  // Data HPP manual dari localStorage (tetap dipertahankan untuk kompatibilitas)
-  const dataHPPManual = JSON.parse(
-    localStorage.getItem("penyesuaian_hpp") || "[]"
-  );
+    const otomatis = transaksi
+      .filter(t => cocokKataKunci(t.keterangan, cfg.kataKunci))
+      .map(t => ({
+        id: t.id || ("oto-" + jenisKey + "-" + (t.tanggal || "") + "-" + t.jumlah),
+        tanggal: t.tanggal,
+        keterangan: t.keterangan,
+        total: t.jumlah,
+        sumber: "otomatis"
+      }));
 
-  // Gabungkan data HPP otomatis + manual
-  const dataHPPGabungan = [
-    ...dataHPPOtomatis.map(t => ({
-      id: t.id || Date.now() + Math.random(),
-      tanggal: t.tanggal,
-      keterangan: t.keterangan,
-      total: t.jumlah,
-      akunTarget: t.akunTarget || "Persediaan",
-      sumber: "otomatis"
-    })),
-    ...dataHPPManual.map(t => ({
+    const manual = (loadData(cfg.storageKey) || []).map(t => ({
       ...t,
       sumber: "manual"
-    }))
-  ];
+    }));
 
-  // Hapus duplikat berdasarkan id
-  const dataHPP = [];
-  const seenIds = new Set();
-  dataHPPGabungan.forEach(item => {
-    if (!seenIds.has(item.id)) {
-      seenIds.add(item.id);
-      dataHPP.push(item);
-    }
+    const gabungan = [...otomatis, ...manual];
+
+    // Hapus duplikat berdasarkan id
+    const hasil = [];
+    const seenIds = new Set();
+    gabungan.forEach(item => {
+      if (!seenIds.has(item.id)) {
+        seenIds.add(item.id);
+        hasil.push(item);
+      }
+    });
+    return hasil;
+  }
+
+  const dataPerJenis = {};
+  Object.keys(KONFIGURASI_PENYESUAIAN).forEach(key => {
+    dataPerJenis[key] = ambilDataPenyesuaian(key);
   });
 
   // ===============================
-  // 2. RENDER TABEL PERSEDIAAN
+  // 2b. DETEKSI OTOMATIS JENIS PENYESUAIAN DARI KETERANGAN
   // ===============================
-  let rowsPersediaan = "";
-  let totalPersediaan = 0;
+  // Dipakai oleh form input manual supaya orang tidak perlu memilih
+  // jenis penyesuaian sendiri lewat dropdown. Urutan pengecekan dibuat
+  // dari kata kunci yang lebih spesifik dulu supaya tidak salah deteksi.
+  function deteksiJenisDariKeterangan(teks) {
+    const t = (teks || "").toLowerCase().trim();
+    if (!t) return null;
 
-  if (dataPersediaan.length === 0) {
-    rowsPersediaan = `<tr><td colspan="7" style="text-align:center;">Belum ada data persediaan</td></tr>`;
-  } else {
-    dataPersediaan.forEach((t, index) => {
-      const { debit, kredit } = tentukanDebitKredit(t);
-
-      if (debit.nama.toLowerCase() === "persediaan") {
-        totalPersediaan += t.jumlah;
-      }
-      if (kredit.nama.toLowerCase() === "persediaan") {
-        totalPersediaan -= t.jumlah;
-      }
-
-      rowsPersediaan += `
-        <tr>
-          <td rowspan="2">${index + 1}</td>
-          <td rowspan="2">${formatTanggal(t.tanggal)}</td>
-          <td>${debit.kode}</td>
-          <td rowspan="2">${t.keterangan}</td>
-          <td>${capitalize(debit.nama)}</td>
-          <td class="text-right">${formatRupiah(t.jumlah)}</td>
-          <td></td>
-        </tr>
-        <tr>
-          <td>${kredit.kode}</td>
-          <td style="padding-left:20px">${capitalize(kredit.nama)}</td>
-          <td></td>
-          <td class="text-right">${formatRupiah(t.jumlah)}</td>
-        </tr>
-      `;
-    });
+    if (t.includes("peralatan")) return "peralatan";
+    if (t.includes("perlengkapan")) return "perlengkapan";
+    if (t.includes("sewa")) return "sewa";
+    if (t.includes("gaji")) return "gaji";
+    return null;
   }
 
   // ===============================
-  // 3. RENDER TABEL PERALATAN
+  // 3. RENDER TABEL PER JENIS PENYESUAIAN
   // ===============================
-  let rowsPeralatan = "";
-  let totalPeralatan = 0;
+  function renderTabelJenis(jenisKey) {
+    const cfg = KONFIGURASI_PENYESUAIAN[jenisKey];
+    const data = dataPerJenis[jenisKey];
 
-  if (dataPeralatan.length === 0) {
-    rowsPeralatan = `<tr><td colspan="7" style="text-align:center;">Belum ada data peralatan</td></tr>`;
-  } else {
-    dataPeralatan.forEach((t, index) => {
-      const { debit, kredit } = tentukanDebitKredit(t);
+    let rows = "";
+    let total = 0;
 
-      if (debit.nama.toLowerCase() === "peralatan") {
-        totalPeralatan += t.jumlah;
-      }
-      if (kredit.nama.toLowerCase() === "peralatan") {
-        totalPeralatan -= t.jumlah;
-      }
+    if (data.length === 0) {
+      rows = `<tr><td colspan="8" style="text-align:center;">Belum ada data ${cfg.label.toLowerCase()}</td></tr>`;
+    } else {
+      data.forEach((t, index) => {
+        total += t.total;
+        const labelSumber = t.sumber === "otomatis" ? "🔄 Otomatis" : "✏️ Manual";
+        const tombolHapus = t.sumber === "manual"
+          ? `<td rowspan="2" class="delete-cell" onclick="deletePenyesuaian('${jenisKey}','${t.id}')" title="Hapus">🗑️</td>`
+          : `<td rowspan="2"></td>`;
 
-      rowsPeralatan += `
-        <tr>
-          <td rowspan="2">${index + 1}</td>
-          <td rowspan="2">${formatTanggal(t.tanggal)}</td>
-          <td>${debit.kode}</td>
-          <td rowspan="2">${t.keterangan}</td>
-          <td>${capitalize(debit.nama)}</td>
-          <td class="text-right">${formatRupiah(t.jumlah)}</td>
-          <td></td>
-        </tr>
-        <tr>
-          <td>${kredit.kode}</td>
-          <td style="padding-left:20px">${capitalize(kredit.nama)}</td>
-          <td></td>
-          <td class="text-right">${formatRupiah(t.jumlah)}</td>
-        </tr>
-      `;
-    });
+        rows += `
+          <tr>
+            <td rowspan="2">${index + 1}</td>
+            <td rowspan="2">${formatTanggal(t.tanggal)}</td>
+            <td>${cfg.debit.kode}</td>
+            <td rowspan="2">${t.keterangan} <small>(${labelSumber})</small></td>
+            <td>${cfg.debit.nama}</td>
+            <td class="text-right">${formatRupiah(t.total)}</td>
+            <td></td>
+            ${tombolHapus}
+          </tr>
+          <tr>
+            <td>${cfg.kredit.kode}</td>
+            <td style="padding-left:20px">${cfg.kredit.nama}</td>
+            <td></td>
+            <td class="text-right">${formatRupiah(t.total)}</td>
+          </tr>
+        `;
+      });
+    }
+
+    return { rows, total };
   }
 
+  const tabel = {};
+  Object.keys(KONFIGURASI_PENYESUAIAN).forEach(key => {
+    tabel[key] = renderTabelJenis(key);
+  });
+
   // ===============================
-  // 4. RENDER TABEL HPP BULANAN (OTOMATIS + MANUAL)
+  // 4. TOTAL PENYESUAIAN
   // ===============================
-  let rowsInputHPP = "";
-  if (dataHPP.length === 0) {
-    rowsInputHPP = `<tr><td colspan="8" style="text-align:center;">Belum ada penyesuaian HPP</td></tr>`;
-  } else {
-    dataHPP.forEach((t, index) => {
-      const akunTarget = t.akunTarget || "Persediaan";
-      const kodeAkun = akunTarget === "Peralatan" ? "105" : "113";
-      const labelSumber = t.sumber === "otomatis" ? "🔄 Otomatis" : "✏️ Manual";
-      rowsInputHPP += `
-        <tr>
-          <td rowspan="2">${index + 1}</td>
-          <td rowspan="2">${formatTanggal(t.tanggal)}</td>
-          <td>511</td>
-          <td rowspan="2">${t.keterangan} <small>(${labelSumber})</small></td>
-          <td>Harga Pokok Penjualan</td>
-          <td class="text-right">${formatRupiah(t.total)}</td>
-          <td></td>
-          <td rowspan="2" class="delete-cell"
-            onclick="deleteInputHPP('${t.id}')"
-            title="Hapus">
-            🗑️
-          </td>
-        </tr>
-        <tr>
-          <td>${kodeAkun}</td>
-          <td style="padding-left:20px">${akunTarget}</td>
-          <td></td>
-          <td class="text-right">${formatRupiah(t.total)}</td>
-        </tr>
-      `;
-    });
+  const totalPenyesuaian = Object.values(tabel).reduce((sum, t) => sum + t.total, 0);
+
+  // Disimpan dengan key yang sama seperti sebelumnya ("total_penyesuaian")
+  // supaya laporan lain (misal Neraca Saldo Setelah Penyesuaian) yang
+  // sudah membaca key ini tetap mendapat nilai total terbaru.
+  saveData("total_penyesuaian", totalPenyesuaian);
+
+  // ===============================
+  // 5. RENDER UI
+  // ===============================
+  function bagianTabel(jenisKey) {
+    const cfg = KONFIGURASI_PENYESUAIAN[jenisKey];
+    const hasil = tabel[jenisKey];
+    return `
+      <section class="cardHPP">
+        <h2>Jurnal Penyesuaian - ${cfg.label} <small></small></h2>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>No</th>
+              <th>Tanggal</th>
+              <th>Kode</th>
+              <th>Keterangan</th>
+              <th>Akun</th>
+              <th class="text-right">Debit</th>
+              <th class="text-right">Kredit</th>
+              <th>Aksi</th>
+            </tr>
+          </thead>
+          <tbody>${hasil.rows}</tbody>
+          <tfoot>
+            <tr>
+              <th colspan="5" class="text-right">Total ${cfg.label}</th>
+              <th colspan="2" class="text-right">${formatRupiah(hasil.total)}</th>
+              <th></th>
+            </tr>
+          </tfoot>
+        </table>
+      </section>
+    `;
   }
 
-  // ===============================
-  // 5. HITUNG TOTAL
-  // ===============================
-  const totalAset = totalPeralatan + totalPersediaan;
-  const totalHPP = dataHPP.reduce((sum, item) => sum + item.total, 0);
-  const totalPenyesuaian = totalHPP; // sesuai screenshot
-
-  // Simpan total penyesuaian untuk Laba Rugi
-  localStorage.setItem("total_penyesuaian", JSON.stringify(totalAset - totalHPP));
-
-  // ===============================
-  // 6. RENDER UI
-  // ===============================
   app.innerHTML = `
     <section class="card">
       <div class="dashboard-sesuaikan">
         <h3>Total Penyesuaian</h3>
         <p class="amount">${formatRupiah(totalPenyesuaian)}</p>
-        <small style="color: #666;">Total HPP</small>
+        <small style="color: #666;">Penyusutan Peralatan + Perlengkapan + Sewa + Gaji</small>
       </div>
     </section>
 
     <section class="card">
-      <h2>Input HPP Manual</h2>
-      <form id="inputTransaksiForm" class="form">
+      <h2>Input Penyesuaian Akhir Bulan</h2>
+      <form id="inputPenyesuaianForm" class="form">
         <div class="form-group">
           <label>Tanggal</label>
           <input type="date" id="tanggal" required />
         </div>
         <div class="form-group">
           <label>Keterangan</label>
-          <input type="text" id="keterangan" placeholder="Contoh: pemakaian persediaan 1 bulan" required />
-          <small style="color: #666;">Masukkan kata "persediaan" atau "peralatan" untuk menentukan akun target.</small>
+          <input type="text" id="keterangan" placeholder="Contoh: penyusutan peralatan bulan ini" required />
+          <small style="color: #666;">Cukup masukkan kata "peralatan", "perlengkapan", "sewa", atau "gaji" di keterangan — jenis penyesuaian akan terdeteksi otomatis.</small>
         </div>
         <div class="form-group">
           <label>Jumlah (Rp)</label>
           <input type="number" id="jumlah" required />
         </div>
-        <button type="submit">Simpan HPP Manual</button>
+        <button type="submit">Simpan Penyesuaian</button>
       </form>
-      <small style="color: #2563eb;">💡 Atau masukkan transaksi biasa dengan kata "HPP" atau "pemakaian" di keterangan untuk otomatis.</small>
+      <small style="color: #2563eb;">💡 Atau masukkan transaksi biasa di Jurnal Umum dengan kata kunci penyesuaian (misal "penyusutan peralatan", "penyesuaian perlengkapan", "penyesuaian sewa", "penyesuaian gaji") agar otomatis muncul di sini.</small>
     </section>
 
-    <section class="cardHPP">
-      <h2>Jurnal Penyesuaian - Persediaan <small></small></h2>
-      <table class="table">
-        <thead>
-          <tr>
-            <th>No</th>
-            <th>Tanggal</th>
-            <th>Kode</th>
-            <th>Keterangan</th>
-            <th>Akun</th>
-            <th class="text-right">Debit</th>
-            <th class="text-right">Kredit</th>
-          </tr>
-        </thead>
-        <tbody>${rowsPersediaan}</tbody>
-        <tfoot>
-          <tr>
-            <th colspan="5" class="text-right">Total Persediaan</th>
-            <th colspan="2" class="text-right">
-              ${formatRupiah(totalPersediaan)}
-            </th>
-          </tr>
-        </tfoot>
-      </table>
-    </section>
-
-    <section class="cardHPP">
-      <h2>Jurnal Penyesuaian - Peralatan <small></small></h2>
-      <table class="table">
-        <thead>
-          <tr>
-            <th>No</th>
-            <th>Tanggal</th>
-            <th>Kode</th>
-            <th>Keterangan</th>
-            <th>Akun</th>
-            <th class="text-right">Debit</th>
-            <th class="text-right">Kredit</th>
-          </tr>
-        </thead>
-        <tbody>${rowsPeralatan}</tbody>
-        <tfoot>
-          <tr>
-            <th colspan="5" class="text-right">Total Peralatan</th>
-            <th colspan="2" class="text-right">
-              ${formatRupiah(totalPeralatan)}
-            </th>
-          </tr>
-        </tfoot>
-      </table>
-    </section>
-
-    <section class="cardTotalAset">
-      <h3>Total Aset (Persediaan + Peralatan)</h3>
-      <p class="amount">${formatRupiah(totalAset)}</p>
-    </section>
-
-    <section class="cardHPP">
-      <h2>Penyesuaian HPP Bulanan <small></small></h2>
-      <table class="table">
-        <thead>
-          <tr>
-            <th>No</th>
-            <th>Tanggal</th>
-            <th>Kode</th>
-            <th>Keterangan</th>
-            <th>Akun</th>
-            <th class="text-right">Debit</th>
-            <th class="text-right">Kredit</th>
-            <th>Aksi</th>
-          </tr>
-        </thead>
-        <tbody>${rowsInputHPP}</tbody>
-        <tfoot>
-          <tr>
-            <th colspan="5" class="text-right">Total HPP</th>
-            <th colspan="2" class="text-right">
-              ${formatRupiah(totalHPP)}
-            </th>
-          </tr>
-        </tfoot>
-      </table>
-    </section>
+    ${bagianTabel("peralatan")}
+    ${bagianTabel("perlengkapan")}
+    ${bagianTabel("sewa")}
+    ${bagianTabel("gaji")}
   `;
 
   // ===============================
-  // 7. EVENT SUBMIT FORM HPP MANUAL
+  // 6. EVENT SUBMIT FORM PENYESUAIAN MANUAL
   // ===============================
-  const form = document.getElementById("inputTransaksiForm");
+  const form = document.getElementById("inputPenyesuaianForm");
   form.addEventListener("submit", function (e) {
     e.preventDefault();
 
@@ -333,41 +265,31 @@ function renderJurnalPenyesuaianPersediaan() {
 
     if (!tanggal || !keterangan || !jumlah) return;
 
-    // Deteksi akun target dari keterangan
-    const text = keterangan.toLowerCase();
-    let akunTarget = "Persediaan";
-    if (text.includes("peralatan")) {
-      akunTarget = "Peralatan";
-    } else if (text.includes("persediaan")) {
-      akunTarget = "Persediaan";
-    } else {
-      alert("Keterangan harus mengandung kata 'persediaan' atau 'peralatan' untuk menentukan akun yang dikurangi.");
+    const jenisKey = deteksiJenisDariKeterangan(keterangan);
+    if (!jenisKey) {
+      alert("Keterangan harus mengandung kata 'peralatan', 'perlengkapan', 'sewa', atau 'gaji' supaya jenis penyesuaian bisa terdeteksi otomatis.");
       return;
     }
 
+    const cfg = KONFIGURASI_PENYESUAIAN[jenisKey];
+
     const yakin = confirm(
-      "Yakin ingin menyimpan HPP manual ini?\n\n" +
+      "Yakin ingin menyimpan penyesuaian ini?\n\n" +
+      "Jenis : " + cfg.label + "\n" +
       "Tanggal : " + formatTanggal(tanggal) + "\n" +
       "Keterangan : " + keterangan + "\n" +
-      "Akun Target : " + akunTarget + "\n" +
       "Jumlah : " + formatRupiah(jumlah)
     );
     if (!yakin) return;
 
-    const dataHPP = JSON.parse(
-      localStorage.getItem("penyesuaian_hpp") || "[]"
-    );
-
-    dataHPP.push({
+    const data = loadData(cfg.storageKey) || [];
+    data.push({
       id: Date.now() + Math.random(),
       tanggal,
       keterangan,
-      total: jumlah,
-      akunTarget,
-      sumber: "manual"
+      total: jumlah
     });
-
-    localStorage.setItem("penyesuaian_hpp", JSON.stringify(dataHPP));
+    saveData(cfg.storageKey, data);
 
     form.reset();
     renderJurnalPenyesuaianPersediaan();
@@ -375,29 +297,29 @@ function renderJurnalPenyesuaianPersediaan() {
 }
 
 // ===============================
-// FUNGSI HAPUS HPP
+// FUNGSI HAPUS PENYESUAIAN MANUAL
 // ===============================
-function deleteInputHPP(id) {
-  // Coba hapus dari data manual dulu
-  let dataHPP = JSON.parse(
-    localStorage.getItem("penyesuaian_hpp") || "[]"
-  );
+function deletePenyesuaian(jenisKey, id) {
+  const cfg = KONFIGURASI_PENYESUAIAN[jenisKey];
+  if (!cfg) return;
 
-  const manualItem = dataHPP.find(d => d.id == id);
-  if (manualItem) {
-    const yakin = confirm(
-      "Yakin ingin menghapus data HPP manual ini?\n\n" +
-      "Tanggal : " + formatTanggal(manualItem.tanggal) + "\n" +
-      "Keterangan : " + manualItem.keterangan
-    );
-    if (!yakin) return;
+  let data = loadData(cfg.storageKey) || [];
+  const item = data.find(d => d.id == id);
 
-    const filtered = dataHPP.filter(d => d.id != id);
-    localStorage.setItem("penyesuaian_hpp", JSON.stringify(filtered));
-    renderJurnalPenyesuaianPersediaan();
+  if (!item) {
+    alert("Data penyesuaian otomatis dari transaksi tidak bisa dihapus di sini. Hapus transaksi aslinya di Jurnal Umum.");
     return;
   }
 
-  // Jika tidak ditemukan di manual, mungkin data otomatis dari transaksi
-  alert("Data HPP otomatis dari transaksi tidak bisa dihapus. Hapus transaksi aslinya di Jurnal Umum.");
+  const yakin = confirm(
+    "Yakin ingin menghapus data penyesuaian ini?\n\n" +
+    "Jenis : " + cfg.label + "\n" +
+    "Tanggal : " + formatTanggal(item.tanggal) + "\n" +
+    "Keterangan : " + item.keterangan
+  );
+  if (!yakin) return;
+
+  const filtered = data.filter(d => d.id != id);
+  saveData(cfg.storageKey, filtered);
+  renderJurnalPenyesuaianPersediaan();
 }
