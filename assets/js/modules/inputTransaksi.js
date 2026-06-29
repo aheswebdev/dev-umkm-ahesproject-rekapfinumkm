@@ -22,7 +22,13 @@ function renderInputTransaksi() {
 
         <div class="form-group">
           <label>Keterangan</label>
-          <input type="text" id="keterangan" required />
+          <input type="text" id="keterangan" placeholder="Contoh: beli perlengkapan tunai" required />
+          <small style="color: #666;">
+            Akun dikenali otomatis dari kata kunci, contoh: kas, piutang, persediaan, peralatan,
+            perlengkapan, utang usaha, bayar gaji/listrik/air/internet/sewa.<br />
+            Untuk penyesuaian akhir bulan gunakan: "penyusutan peralatan", "pemakaian perlengkapan",
+            "penyesuaian sewa", atau "penyesuaian gaji".
+          </small>
         </div>
 
         <div class="form-group">
@@ -84,9 +90,13 @@ const AKUN_RULES = [
   { kode: "103", nama: "Piutang", kategori: "aset", saldoNormal: "debit", idnama: "piutang" },
   { kode: "104", nama: "Persediaan", kategori: "aset", saldoNormal: "debit", idnama: "persediaan" },
   { kode: "105", nama: "Peralatan", kategori: "aset", saldoNormal: "debit", idnama: "peralatan" },
+  { kode: "106", nama: "Perlengkapan", kategori: "aset", saldoNormal: "debit", idnama: "perlengkapan" },
+  { kode: "107", nama: "Sewa Dibayar Dimuka", kategori: "aset", saldoNormal: "debit", idnama: "sewa dibayar dimuka" },
+  { kode: "108", nama: "Akumulasi Penyusutan Peralatan", kategori: "aset", saldoNormal: "kredit", idnama: "akumulasi penyusutan peralatan" },
 
   { kode: "201", nama: "Utang Usaha", kategori: "liabilitas", saldoNormal: "kredit", idnama: "utang usaha" },
   { kode: "202", nama: "Utang Bank", kategori: "liabilitas", saldoNormal: "kredit", idnama: "utang bank" },
+  { kode: "203", nama: "Utang Gaji", kategori: "liabilitas", saldoNormal: "kredit", idnama: "utang gaji" },
 
   { kode: "301", nama: "Modal", kategori: "ekuitas", saldoNormal: "kredit", idnama: "modal" },
   { kode: "302", nama: "Prive", kategori: "ekuitas", saldoNormal: "kredit", idnama: "prive" },
@@ -102,6 +112,8 @@ const AKUN_RULES = [
   { kode: "503", nama: "Beban Air", kategori: "beban", saldoNormal: "debit", idnama: "bayar air" },
   { kode: "504", nama: "Beban Internet", kategori: "beban", saldoNormal: "debit", idnama: "bayar internet" },
   { kode: "505", nama: "Beban Sewa", kategori: "beban", saldoNormal: "debit", idnama: "bayar sewa" },
+  { kode: "506", nama: "Beban Perlengkapan", kategori: "beban", saldoNormal: "debit", idnama: "beban perlengkapan" },
+  { kode: "507", nama: "Beban Penyusutan Peralatan", kategori: "beban", saldoNormal: "debit", idnama: "beban penyusutan peralatan" },
 ];
 
 // prioritas kategori akun deteksi
@@ -113,20 +125,24 @@ const PRIORITAS_KATEGORI = [
   "aset"
 ];
 
-// Kata kunci untuk transaksi penyesuaian HPP (pemakaian persediaan/peralatan,
-// penyusutan, dll). Daftar ini harus selaras dengan KATA_KUNCI_HPP_OTOMATIS
-// di jurnalPenyesuaian.js, supaya transaksi yang ditulis dengan kata-kata ini
-// tetap lolos validasi & otomatis terdeteksi akunnya, lalu otomatis muncul
-// di tabel Penyesuaian HPP Bulanan.
-const KATA_KUNCI_HPP = [
-  "hpp",
-  "harga pokok penjualan",
-  "pemakaian",
-  "pakai persediaan",
-  "penyusutan",
-  "depresiasi",
-  "susut"
-];
+// Kata kunci untuk transaksi PENYESUAIAN AKHIR PERIODE (bukan persediaan).
+// Daftar ini harus SELARAS dengan kataKunci pada KONFIGURASI_PENYESUAIAN
+// di jurnalPenyesuaian.js, supaya transaksi yang ditulis dengan kata-kata
+// ini lolos validasi & terdeteksi akunnya di sini, lalu otomatis muncul
+// juga di tabel Jurnal Penyesuaian yang sesuai.
+//
+// Persediaan TIDAK termasuk di sini -- transaksi persediaan tetap
+// diproses sebagai transaksi normal (pembelian/pengurangan aset biasa)
+// dan tidak pernah masuk ke Jurnal Penyesuaian.
+const KATA_KUNCI_PENYESUAIAN = {
+  peralatan: ["penyusutan peralatan", "susut peralatan", "depresiasi peralatan"],
+  perlengkapan: ["penyesuaian perlengkapan", "pemakaian perlengkapan", "perlengkapan terpakai"],
+  sewa: ["penyesuaian sewa", "beban sewa", "sewa dibayar dimuka"],
+  gaji: ["penyesuaian gaji", "gaji terutang", "utang gaji"]
+};
+
+// Gabungan semua kata kunci penyesuaian (dipakai untuk validasi keterangan)
+const SEMUA_KATA_KUNCI_PENYESUAIAN = Object.values(KATA_KUNCI_PENYESUAIAN).flat();
 
 // ===============================
 // DETEKSI AKUN
@@ -162,6 +178,10 @@ function detectAkunUtama(keterangan) {
     return AKUN_RULES.find(a => a.nama === "Utang Bank");
   }
 
+  if (text.includes("bayar utang gaji")) {
+    return AKUN_RULES.find(a => a.nama === "Utang Gaji");
+  }
+
   if (text.includes("bayar utang")) {
     return AKUN_RULES.find(a => a.nama === "Utang Usaha");
   }
@@ -174,13 +194,23 @@ function detectAkunUtama(keterangan) {
     return AKUN_RULES.find(a => a.nama === "Piutang");
   }
 
-  // 🟠 RULE KHUSUS PENYESUAIAN HPP (pemakaian, penyusutan, depresiasi, dll)
-  // Default akun target: Persediaan, kecuali kata "peralatan" disebutkan.
-  if (KATA_KUNCI_HPP.some(k => text.includes(k))) {
-    if (text.includes("peralatan")) {
-      return AKUN_RULES.find(a => a.nama === "Peralatan");
-    }
-    return AKUN_RULES.find(a => a.nama === "Persediaan");
+  // 🟠 RULE KHUSUS PENYESUAIAN AKHIR PERIODE
+  // (Persediaan TIDAK termasuk -- persediaan tetap diproses sebagai
+  // transaksi normal di rule pembelian aset / deteksi default di bawah)
+  if (KATA_KUNCI_PENYESUAIAN.peralatan.some(k => text.includes(k))) {
+    return AKUN_RULES.find(a => a.nama === "Akumulasi Penyusutan Peralatan");
+  }
+
+  if (KATA_KUNCI_PENYESUAIAN.perlengkapan.some(k => text.includes(k))) {
+    return AKUN_RULES.find(a => a.nama === "Perlengkapan");
+  }
+
+  if (KATA_KUNCI_PENYESUAIAN.sewa.some(k => text.includes(k))) {
+    return AKUN_RULES.find(a => a.nama === "Sewa Dibayar Dimuka");
+  }
+
+  if (KATA_KUNCI_PENYESUAIAN.gaji.some(k => text.includes(k))) {
+    return AKUN_RULES.find(a => a.nama === "Utang Gaji");
   }
 
   // 🔵 DEFAULT DETEKSI
@@ -202,6 +232,36 @@ function detectAkunUtama(keterangan) {
 
 function detectAkunLawan(akunUtama, keterangan) {
   const text = keterangan.toLowerCase();
+
+  // 🟠 0. PENYESUAIAN AKHIR PERIODE (peralatan, perlengkapan, sewa, gaji)
+  // Ditaruh paling atas supaya tidak ketiban rule umum "aset selain kas → Kas".
+  if (akunUtama.nama === "Akumulasi Penyusutan Peralatan") {
+    return AKUN_RULES.find(a => a.nama === "Beban Penyusutan Peralatan");
+  }
+
+  if (
+    akunUtama.nama === "Perlengkapan" &&
+    KATA_KUNCI_PENYESUAIAN.perlengkapan.some(k => text.includes(k))
+  ) {
+    return AKUN_RULES.find(a => a.nama === "Beban Perlengkapan");
+  }
+
+  if (
+    akunUtama.nama === "Sewa Dibayar Dimuka" &&
+    text.includes("penyesuaian sewa")
+  ) {
+    return AKUN_RULES.find(a => a.nama === "Beban Sewa");
+  }
+
+  if (akunUtama.nama === "Utang Gaji") {
+    // "bayar utang gaji" → melunasi utang gaji yang sudah diakui (Kredit Kas)
+    // selain itu (termasuk "...gaji ... belum dibayar") → mengakui gaji
+    // yang belum dibayar (Kredit Utang Gaji)
+    if (text.includes("bayar utang gaji")) {
+      return AKUN_RULES.find(a => a.nama === "Kas");
+    }
+    return AKUN_RULES.find(a => a.nama === "Beban Gaji");
+  }
 
   // 🔥🔥 1. PENJUALAN PIUTANG (PALING ATAS)
   if (
@@ -266,7 +326,7 @@ function isKeteranganValid(keterangan) {
     text.includes("bayar piutang") ||
     text.includes("terima piutang") ||
     text.includes("pelunasan") ||
-    KATA_KUNCI_HPP.some(k => text.includes(k));
+    SEMUA_KATA_KUNCI_PENYESUAIAN.some(k => text.includes(k));
 }
 
 function getAkunTerdeteksi(keterangan) {
@@ -406,7 +466,12 @@ function isPenguranganAkun(keterangan) {
     text.includes("bayar utang") ||
     text.includes("pelunasan") ||
     text.includes("pembayaran") ||
-    KATA_KUNCI_HPP.some(k => text.includes(k))
+    // Perlengkapan & Sewa Dibayar Dimuka adalah AKUN ASET (saldo normal
+    // debit) yang BERKURANG saat penyesuaian, jadi perlu dibalik.
+    // Akumulasi Penyusutan Peralatan & Utang Gaji TIDAK perlu dibalik
+    // karena saldo normalnya sudah kredit (lihat AKUN_RULES).
+    KATA_KUNCI_PENYESUAIAN.perlengkapan.some(k => text.includes(k)) ||
+    text.includes("penyesuaian sewa")
   );
 }
 function tentukanDebitKredit(transaksi) {
